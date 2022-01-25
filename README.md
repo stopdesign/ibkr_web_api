@@ -8,8 +8,8 @@ I believe this is the minimum required list of cookies:
 
 * USERID
 * XYZAB_AM.LOGIN 
-* XYZAB  # the same as XYZAB_AM.LOGIN)
-* cp  # iserver session
+* XYZAB — the same as XYZAB_AM.LOGIN
+* cp — iserver session
 
 At the moment, it only supports accounts without 2FA enabled.
 There is some code for requesting and processing the second factor,
