@@ -20,7 +20,7 @@ def main():
     ib.request_dispatcher()
 
     cprint("\n\nVALIDATE SSO\n", "red")
-    ib.validate_sso()
+    ib.sso_validate()
 
     cprint("\n\nINIT_PORTAL_SESSION\n", "red")
     ib.init_portal_session()
