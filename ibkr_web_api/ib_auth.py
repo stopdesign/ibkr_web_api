@@ -4,10 +4,12 @@ import re
 import random
 import requests
 import logging
+import redis
 from datetime import datetime
 from secrets import token_hex
 from time import sleep
 from termcolor import cprint
+from cryptography.fernet import Fernet
 from . import IbXyz
 
 
@@ -29,12 +31,13 @@ class IbApi:
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36"
     )
-    timezone = "xxx (America/Los_Angeles)"
+    timezone = "xxx (Etc/UTC)"
 
-    def __init__(self, username, password, paper=False, debug=False):
+    def __init__(self, username, password, paper=False, secret=None, debug=False):
         self.debug = debug
         self.username = username
         self.password = password
+        self.secret = secret
         self.login_type = 2 if paper else 1
         self.machine_id = token_hex(4)
         self.second_factor_type = None
@@ -42,6 +45,7 @@ class IbApi:
         self.jsessionid = None
         self.reset_session()
         self.xyz = IbXyz()
+        self.redis = redis.Redis(host='localhost', port=6379, db=6)
 
     @property
     def xxx_password(self):
@@ -418,6 +422,61 @@ class IbApi:
             cprint(f"History ERROR", "red")
         return res
 
+    def orders_nice(self):
+        data = {"filters": []}
+        url = "/iserver/account/orders"
+        res = self.iserver_request(url, "GET", data=data)
+        if orders := res.get("orders"):
+            for order in orders:
+                txt = ("{acct}  {orderId}  {order_ref}   "
+                       "{ticker:<5}  {status:<15}  "
+                       "{sizeAndFills:>5}    ".format(**order))
+                print(f"{txt:<50}" + "{orderDesc}".format(**order))
+            # print(json.dumps(order, indent=2, default=str))
+        else:
+            cprint(f"Orders ERROR", "red")
+        return res
+
+    def order_details(self, order_id):
+        url = f"/iserver/account/order/status/{order_id}"
+        res = self.iserver_request(url, "GET")
+        if orders := res.get("order_id"):
+            print(json.dumps(res, indent=2, default=str))
+            for order in orders:
+                txt = ("{orderId}  {order_ref}   {ticker:<5}  {status:<10}  "
+                       "{sizeAndFills}".format(**order))
+                print(f"{txt:<50}" + "{orderDesc}".format(**order))
+        else:
+            cprint(f"Orders ERROR", "red")
+        return res
+
+    def contract_details(self, symbol):
+        url = f"/portal.proxy/v1/portal/trsrv/futures?symbols={symbol}"
+        res = self.request(url, "GET", data={}, is_json=True)
+        if res.status_code == 200:
+            print(json.dumps(res.json(), indent=2, default=str))
+        else:
+            print("ERROR", symbol, res.status_code, res.text)
+
+    def positions_nice(self, account):
+        url = f"/portal.proxy/v1/portal/portfolio/{account}/positions"
+        res = self.request(url, "GET", data={}, is_json=True)
+        if res.status_code == 200:
+            for position in res.json():
+                print(
+                    "{acctId}  "
+                    "{contractDesc:<20} "
+                    "{position:>8} "
+                    "{mktPrice:>10.2f} "
+                    "{unrealizedPnl:>8}".format(**position)
+                )
+            # print(json.dumps(position, indent=2, default=str))
+        else:
+            print(res.status_code)
+            print(res.text)
+            cprint(f"Positions ERROR", "red")
+        return res
+
     def tickle(self):
         """
         The tickle endpoint pings the server to prevent the session from ending.
@@ -432,11 +491,26 @@ class IbApi:
             self.save_session()
         return res
 
+    def encrypt(self, message: bytes, key: bytes) -> bytes:
+        assert key, "No secret key provided"
+        return Fernet(key).encrypt(message)
+
+    def decrypt(self, token: bytes, key: bytes) -> bytes:
+        assert key, "No secret key provided"
+        return Fernet(key).decrypt(token)
+
     def save_session(self):
         cookies = self.session.cookies.get_dict()
         cookies["__now"] = datetime.utcnow().replace(microsecond=0)
         with open(f"session_{self.username}.json", "w") as f:
             f.write(json.dumps(cookies, indent=2, default=str))
+
+        # Сдампить cookies в строку и зашифровать
+        cookies_str = json.dumps(cookies, default=str).encode()
+        data = {"cookies": self.encrypt(cookies_str, self.secret)}
+        stream_name = f"session_{self.username}"
+        self.redis.xadd(stream_name, data, maxlen=5, approximate=False)
+
         cprint(
             f"SAVE SESSION: "
             f"uid={cookies.get('USERID')}, "
@@ -481,7 +555,22 @@ class IbApi:
                 log.error("Bad session file")
                 log.exception(e)
         else:
-            log.warning("Session file not found")
+            log.error("Session file not found")
+
+    def load_redis_session(self):
+        try:
+            stream_name = f"session_{self.username}"
+            res = self.redis.xread({stream_name: b'0-0'}, None, 1000)
+            enc_value = res[0][1][-1][1][b'cookies']
+            cookies = json.loads(self.decrypt(enc_value, self.secret).decode())
+            # print(json.dumps(cookies, indent=2, default=str))
+            for key, value in cookies.items():
+                if key[0] == "_":
+                    continue
+                self.session.cookies.set(key, value, domain=self.cd)
+        except Exception as e:
+            log.error("Bad session stream")
+            log.exception(e)
 
     def keep_session_alive(self):
         while True:
