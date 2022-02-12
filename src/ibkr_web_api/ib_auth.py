@@ -543,7 +543,7 @@ class IbApi:
             return False
 
     def load_session(self):
-        file_path = f"session_{self.username}.json"
+        file_path = f"/Users/gregory/projects/life/trrrading/new/session_{self.username}.json"
         if os.path.isfile(file_path):
             try:
                 cookies = json.load(open(file_path))
