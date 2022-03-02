@@ -33,7 +33,18 @@ class IbApi:
     )
     timezone = "xxx (Etc/UTC)"
 
-    def __init__(self, username, password, paper=False, secret=None, debug=False):
+    def __init__(
+        self,
+        username,
+        password,
+        paper=False,
+        secret=None,
+        debug=False,
+        redis_host="127.0.0.1",
+        redis_port=6379,
+        redis_db=0,
+        redis_password=None,
+    ):
         self.debug = debug
         self.username = username
         self.password = password
@@ -45,7 +56,7 @@ class IbApi:
         self.jsessionid = None
         self.reset_session()
         self.xyz = IbXyz()
-        self.redis = redis.Redis(host='localhost', port=6379, db=6)
+        self.redis = redis.Redis(redis_host, redis_port, redis_db, redis_password)
 
     @property
     def xxx_password(self):
@@ -64,12 +75,14 @@ class IbApi:
 
     def reset_session(self):
         self.session = requests.Session()
-        self.session.headers.update({
-            "User-Agent": self.user_agent,
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Referer": f"{self.base_url}/sso/Login",
-            "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
-        })
+        self.session.headers.update(
+            {
+                "User-Agent": self.user_agent,
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Referer": f"{self.base_url}/sso/Login",
+                "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
+            }
+        )
         self.session.cookies.set("AKA_A2", "A", domain=self.cd)
         self.session.keepalive = False
 
@@ -325,8 +338,9 @@ class IbApi:
 
         r = self.request("/sso/Dispatcher", "POST", data=data, jsid=True)
 
-        with open("dispatcher.html", "w") as f:
-            f.write(r.text)
+        if self.debug:
+            with open("dispatcher.html", "w") as f:
+                f.write(r.text)
 
         # id="ERRORMSG" >failed</div>
 
@@ -428,14 +442,41 @@ class IbApi:
         res = self.iserver_request(url, "GET", data=data)
         if orders := res.get("orders"):
             for order in orders:
-                txt = ("{acct}  {orderId}  {order_ref}   "
-                       "{ticker:<5}  {status:<15}  "
-                       "{sizeAndFills:>5}    ".format(**order))
+                txt = (
+                    "{acct}  {orderId}  {order_ref}   "
+                    "{ticker:<5}  {status:<15}  "
+                    "{sizeAndFills:>5}    ".format(**order)
+                )
                 print(f"{txt:<50}" + "{orderDesc}".format(**order))
             # print(json.dumps(order, indent=2, default=str))
         else:
             cprint(f"Orders ERROR", "red")
         return res
+
+    def snapshot_useless(self):
+        url = "/portal.proxy/v1/portal/iserver/marketdata/snapshot?conids=265598,265599"
+        res = self.request(url, "GET", None, is_json=True)
+        print(json.dumps(res.json(), indent=2, default=str))
+        return res
+
+    def snapshot_md(self):
+        url = "/portal.proxy/v1/portal/md/snapshot?conids=461318791,461318792,265598"
+        res = self.request(url, "GET", None, is_json=True)
+        print(json.dumps(res.json(), indent=2, default=str))
+        return res
+
+    def cancel_all_orders(self, account):
+        data = {"filters": []}
+        url = "/iserver/account/orders"
+        res = self.iserver_request(url, "GET", data=data)
+        if orders := res.get("orders"):
+            for order in orders:
+                order_id = order.get("orderId")
+                status = order.get("status")
+                if order_id and status not in ["Inactive", "Cancelled", "Filled"]:
+                    del_url = f"/iserver/account/{account}/order/{order_id}"
+                    res1 = self.iserver_request(del_url, "DELETE", data=None)
+                    print(res1)
 
     def order_details(self, order_id):
         url = f"/iserver/account/order/status/{order_id}"
@@ -443,8 +484,10 @@ class IbApi:
         if orders := res.get("order_id"):
             print(json.dumps(res, indent=2, default=str))
             for order in orders:
-                txt = ("{orderId}  {order_ref}   {ticker:<5}  {status:<10}  "
-                       "{sizeAndFills}".format(**order))
+                txt = (
+                    "{orderId}  {order_ref}   {ticker:<5}  {status:<10}  "
+                    "{sizeAndFills}".format(**order)
+                )
                 print(f"{txt:<50}" + "{orderDesc}".format(**order))
         else:
             cprint(f"Orders ERROR", "red")
@@ -516,7 +559,7 @@ class IbApi:
             f"uid={cookies.get('USERID')}, "
             f"cp={cookies.get('cp')}, "
             f"token={cookies.get('XYZAB')}",
-            "green"
+            "green",
         )
 
     def obtain_session(self):
@@ -542,11 +585,10 @@ class IbApi:
             # log.exception(e)
             return False
 
-    def load_session(self):
-        file_path = f"/Users/gregory/projects/life/trrrading/new/session_{self.username}.json"
-        if os.path.isfile(file_path):
+    def load_session(self, json_file_path):
+        if os.path.isfile(json_file_path):
             try:
-                cookies = json.load(open(file_path))
+                cookies = json.load(open(json_file_path))
                 for key, value in cookies.items():
                     if key[0] == "_":
                         continue
@@ -560,8 +602,8 @@ class IbApi:
     def load_redis_session(self):
         try:
             stream_name = f"session_{self.username}"
-            res = self.redis.xread({stream_name: b'0-0'}, None, 1000)
-            enc_value = res[0][1][-1][1][b'cookies']
+            res = self.redis.xread({stream_name: b"0-0"}, None, 1000)
+            enc_value = res[0][1][-1][1][b"cookies"]
             cookies = json.loads(self.decrypt(enc_value, self.secret).decode())
             # print(json.dumps(cookies, indent=2, default=str))
             for key, value in cookies.items():

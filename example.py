@@ -5,7 +5,11 @@ from ibkr_web_api import IbApi
 
 def main():
 
-    ib = IbApi("username", "password", paper=True, debug=False)
+    # No 2FA
+    username = "***"
+    password = "***"
+
+    ib = IbApi(username, password, paper=True, debug=False)
 
     cprint("\n\nREQUEST_LOGIN\n", "red")
     ib.request_login()
