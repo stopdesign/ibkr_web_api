@@ -542,10 +542,12 @@ class IbApi:
         assert key, "No secret key provided"
         return Fernet(key).decrypt(token)
 
-    def save_session(self):
+    def save_session(self, json_file_path=None):
         cookies = self.session.cookies.get_dict()
         cookies["__now"] = datetime.utcnow().replace(microsecond=0)
-        with open(f"session_{self.username}.json", "w") as f:
+        if not json_file_path:
+            json_file_path = f"session_{self.username}.json"
+        with open(json_file_path, "w") as f:
             f.write(json.dumps(cookies, indent=2, default=str))
 
         # Сдампить cookies в строку и зашифровать
@@ -585,7 +587,9 @@ class IbApi:
             # log.exception(e)
             return False
 
-    def load_session(self, json_file_path):
+    def load_session(self, json_file_path=None):
+        if not json_file_path:
+            json_file_path = f"session_{self.username}.json"
         if os.path.isfile(json_file_path):
             try:
                 cookies = json.load(open(json_file_path))
