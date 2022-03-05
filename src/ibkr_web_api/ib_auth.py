@@ -2,6 +2,8 @@ import json
 import os
 import re
 import random
+from urllib.parse import urlparse
+
 import requests
 import logging
 import redis
@@ -23,8 +25,6 @@ def ts_to_dt_utc(ts):
 class IbApi:
     session: requests.Session
     cd = ".interactivebrokers.com"
-    base_url = "https://ndcdyn.interactivebrokers.com"
-    portal_url = f"{base_url}/portal.proxy/v1/portal"
     request_timeout = 5
     request_delay = 0.2
     user_agent = (
@@ -44,6 +44,7 @@ class IbApi:
         redis_port=6379,
         redis_db=0,
         redis_password=None,
+        base_url=None,
     ):
         self.debug = debug
         self.username = username
@@ -54,9 +55,22 @@ class IbApi:
         self.second_factor_type = None
         self.resp_two_fa = None
         self.jsessionid = None
+
+        # base_url может быть разный в зависимости от локации ip
+        self.base_url = base_url
+        if not self.base_url:
+            self._detect_base_url()
+
+        self.portal_url = "%s/portal.proxy/v1/portal" % self.base_url
+
         self.reset_session()
         self.xyz = IbXyz()
         self.redis = redis.Redis(redis_host, redis_port, redis_db, redis_password)
+
+    def _detect_base_url(self):
+        r = requests.get('https://www.interactivebrokers.com/sso/Login?RL=1&locale=en_US', allow_redirects=False)
+        parsed = urlparse(r.headers['Location'])
+        self.base_url = 'https://%s' % parsed.netloc
 
     @property
     def xxx_password(self):
