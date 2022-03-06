@@ -1,17 +1,14 @@
 import json
-import os
 import re
 import random
 from urllib.parse import urlparse
 
 import requests
 import logging
-import redis
 from datetime import datetime
 from secrets import token_hex
 from time import sleep
 from termcolor import cprint
-from cryptography.fernet import Fernet
 from . import IbXyz
 
 
@@ -37,26 +34,21 @@ class IbApi:
         self,
         username,
         password,
+        session_storage,
         paper=False,
-        secret=None,
         debug=False,
-        redis_host="127.0.0.1",
-        redis_port=6379,
-        redis_db=0,
-        redis_password=None,
         base_url=None,
     ):
         self.debug = debug
         self.username = username
         self.password = password
-        self.secret = secret
         self.login_type = 2 if paper else 1
         self.machine_id = token_hex(4)
         self.second_factor_type = None
         self.resp_two_fa = None
         self.jsessionid = None
+        self.session_storage = session_storage
 
-        # base_url может быть разный в зависимости от локации ip
         self.base_url = base_url
         if not self.base_url:
             self._detect_base_url()
@@ -65,12 +57,15 @@ class IbApi:
 
         self.reset_session()
         self.xyz = IbXyz()
-        self.redis = redis.Redis(redis_host, redis_port, redis_db, redis_password)
 
     def _detect_base_url(self):
+        """
+        Определяем базовый url в зависимости от геолокации
+        """
         r = requests.get('https://www.interactivebrokers.com/sso/Login?RL=1&locale=en_US', allow_redirects=False)
         parsed = urlparse(r.headers['Location'])
         self.base_url = 'https://%s' % parsed.netloc
+        cprint('base_url: %s' % self.base_url, "yellow", end=" ")
 
     @property
     def xxx_password(self):
@@ -172,10 +167,12 @@ class IbApi:
     def iserver_request(self, url, method, data=None):
         if url and url[0] == "/":
             url = self.portal_url + url
+
         res_json = {}
         try:
             resp = self.request(url, method, data, is_json=True)
             resp.raise_for_status()
+
             try:
                 res_json = resp.json()
                 res_json["_ERROR"] = False
@@ -190,6 +187,7 @@ class IbApi:
         except Exception as e:
             log.exception(e)
             res_json["_ERROR"] = "exception"
+
         return res_json
 
     def request_login(self):
@@ -257,84 +255,6 @@ class IbApi:
         self.session.cookies.set("XYZAB", self.xyz.sk, domain=self.cd)
 
         assert server_m2 == self.xyz.big_m2, "Не совпадают M2"
-
-        if self.second_factor_type == "4.2":
-            self.request_completeauth_1()
-            self.resp_two_fa = input("2FA").strip()
-            self.request_complete_twofact_sms(self.resp_two_fa)
-
-        # Ждать результата 2FA
-        if self.second_factor_type == "5.2a":
-            self.request_completeauth_1()
-            self.resp_two_fa = ""
-            for i in range(10):
-                sleep(5)
-                print("==== request_complete_twofact ====")
-                res = self.request_complete_twofact_push()
-                if res.get("auth_res") == "true":
-                    print("2fa DONE")
-                    break
-
-    def request_completeauth_1(self):
-        """
-        Третий шаг — запрос кода 2FA
-        """
-        print("M:", self.xyz.big_m1)
-        data = {
-            "ACTION": "COMPLETEAUTH_1",
-            "APP_NAME": "",
-            "USER": self.username,
-            "ACCT": "",
-            "M1": self.xyz.big_m1,
-            "VERSION": "1",
-            "SF": self.second_factor_type,
-        }
-        url = "/sso/Authenticator"
-        r = self.request(url, "POST", data=data, jsid=True, rand=True)
-        params = IbApi.parse_xml_response(r.text)
-
-        cprint(json.dumps(params, indent=2, default=str), "blue")
-
-    def request_complete_twofact_sms(self, two_fa):
-        """
-        Проверка ответа 2FA
-        """
-        data = {
-            "ACTION": "COMPLETETWOFACT",
-            "APP_NAME": "",
-            "USER": self.username,
-            "ACCT": "",
-            "RESPONSE": two_fa,
-            "VERSION": "1",
-            "SF": self.second_factor_type,
-        }
-        url = "/sso/Authenticator"
-        r = self.request(url, "POST", data=data, jsid=True, rand=True)
-        params = IbApi.parse_xml_response(r.text)
-
-        cprint(json.dumps(params, indent=2, default=str), "blue")
-
-        return params
-
-    def request_complete_twofact_push(self):
-        """
-        Проверка ответа 2FA
-        """
-        data = {
-            "ACTION": "COMPLETETWOFACT",
-            "APP_NAME": "",
-            "USER": self.username,
-            "VERSION": "1",
-            "SF": self.second_factor_type,
-            "PUSH": True,
-        }
-        url = "/sso/Authenticator"
-        r = self.request(url, "POST", data=data, jsid=True, rand=True)
-        params = IbApi.parse_xml_response(r.text)
-
-        cprint(json.dumps(params, indent=2, default=str), "blue")
-
-        return params
 
     def request_dispatcher(self):
         """
@@ -548,35 +468,20 @@ class IbApi:
             self.save_session()
         return res
 
-    def encrypt(self, message: bytes, key: bytes) -> bytes:
-        assert key, "No secret key provided"
-        return Fernet(key).encrypt(message)
-
-    def decrypt(self, token: bytes, key: bytes) -> bytes:
-        assert key, "No secret key provided"
-        return Fernet(key).decrypt(token)
-
-    def save_session(self, json_file_path=None):
+    def save_session(self):
         cookies = self.session.cookies.get_dict()
-        cookies["__now"] = datetime.utcnow().replace(microsecond=0)
-        if not json_file_path:
-            json_file_path = f"session_{self.username}.json"
-        with open(json_file_path, "w") as f:
-            f.write(json.dumps(cookies, indent=2, default=str))
 
-        # Сдампить cookies в строку и зашифровать
-        cookies_str = json.dumps(cookies, default=str).encode()
-        data = {"cookies": self.encrypt(cookies_str, self.secret)}
-        stream_name = f"session_{self.username}"
-        self.redis.xadd(stream_name, data, maxlen=5, approximate=False)
+        try:
+            self.session_storage.save(cookies)
+        except Exception:
+            log.exception('session storage error')
 
-        cprint(
-            f"SAVE SESSION: "
-            f"uid={cookies.get('USERID')}, "
-            f"cp={cookies.get('cp')}, "
-            f"token={cookies.get('XYZAB')}",
-            "green",
-        )
+    def load_session(self):
+        cookies_dict = self.session_storage.load()
+        for key, value in cookies_dict.items():
+            if key[0] == "_":
+                continue
+            self.session.cookies.set(key, value, domain=self.cd)
 
     def obtain_session(self):
         """
@@ -600,37 +505,6 @@ class IbApi:
             log.error("Can't obtain session")
             # log.exception(e)
             return False
-
-    def load_session(self, json_file_path=None):
-        if not json_file_path:
-            json_file_path = f"session_{self.username}.json"
-        if os.path.isfile(json_file_path):
-            try:
-                cookies = json.load(open(json_file_path))
-                for key, value in cookies.items():
-                    if key[0] == "_":
-                        continue
-                    self.session.cookies.set(key, value, domain=self.cd)
-            except Exception as e:
-                log.error("Bad session file")
-                log.exception(e)
-        else:
-            log.error("Session file not found")
-
-    def load_redis_session(self):
-        try:
-            stream_name = f"session_{self.username}"
-            res = self.redis.xread({stream_name: b"0-0"}, None, 1000)
-            enc_value = res[0][1][-1][1][b"cookies"]
-            cookies = json.loads(self.decrypt(enc_value, self.secret).decode())
-            # print(json.dumps(cookies, indent=2, default=str))
-            for key, value in cookies.items():
-                if key[0] == "_":
-                    continue
-                self.session.cookies.set(key, value, domain=self.cd)
-        except Exception as e:
-            log.error("Bad session stream")
-            log.exception(e)
 
     def keep_session_alive(self):
         while True:

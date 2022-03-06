@@ -3,3 +3,4 @@ termcolor==1.1.0
 pycryptodome==3.13.0
 redis==3.5.3
 cryptography==36.0.1
+click
