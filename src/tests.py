@@ -33,7 +33,6 @@ class TestIbApi(unittest.TestCase):
             redis_client=redis_client,
             secret=self.secret
         )
-        print('paper = %s' % self.paper)
 
         self.ib = IbApi(self.username, self.password, session_storage=self.storage, paper=self.paper, debug=False)
 

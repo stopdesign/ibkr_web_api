@@ -62,10 +62,18 @@ class IbApi:
         """
         Определяем базовый url в зависимости от геолокации
         """
-        r = requests.get('https://www.interactivebrokers.com/sso/Login?RL=1&locale=en_US', allow_redirects=False)
-        parsed = urlparse(r.headers['Location'])
-        self.base_url = 'https://%s' % parsed.netloc
-        cprint('base_url: %s' % self.base_url, "yellow", end=" ")
+        r = requests.get(
+            'https://ndcdyn.interactivebrokers.com/sso/Login?RL=1&locale=en_US',
+            headers={"user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.109 Safari/537.36"},
+            allow_redirects=False
+        )
+        location = r.headers.get('Location')
+        if not location:
+            self.base_url = 'https://ndcdyn.interactivebrokers.com'
+        else:
+            parsed = urlparse(location)
+            self.base_url = 'https://%s' % parsed.netloc
+            cprint('base_url: %s' % self.base_url, "yellow", end=" ")
 
     @property
     def xxx_password(self):
