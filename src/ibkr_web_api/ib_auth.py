@@ -30,6 +30,9 @@ class IbApi:
     )
     timezone = "xxx (Etc/UTC)"
 
+    base_hostname = None
+    base_url = None
+
     def __init__(
         self,
         username,
@@ -37,7 +40,6 @@ class IbApi:
         session_storage,
         paper=False,
         debug=False,
-        base_url=None,
     ):
         self.debug = debug
         self.username = username
@@ -49,9 +51,7 @@ class IbApi:
         self.jsessionid = None
         self.session_storage = session_storage
 
-        self.base_url = base_url
-        if not self.base_url:
-            self._detect_base_url()
+        self._detect_base_url()
 
         self.portal_url = "%s/portal.proxy/v1/portal" % self.base_url
 
@@ -69,11 +69,12 @@ class IbApi:
         )
         location = r.headers.get('Location')
         if not location:
-            self.base_url = 'https://ndcdyn.interactivebrokers.com'
+            self.base_hostname = 'ndcdyn.interactivebrokers.com'
         else:
             parsed = urlparse(location)
-            self.base_url = 'https://%s' % parsed.netloc
-            cprint('base_url: %s' % self.base_url, "yellow", end=" ")
+            self.base_hostname = parsed.netloc
+
+        self.base_url = 'https://%s' % self.base_hostname
 
     @property
     def xxx_password(self):
