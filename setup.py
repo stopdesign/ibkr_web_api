@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name="ibkr_web_api",
-    version="1.0.2",
+    version="1.0.3",
     url="https://github.com/stopdesign/ibkr_web_api.git",
     author="Gregory Zhizhilkin",
     description="IBKR Web API",

@@ -40,8 +40,11 @@ class RedisStorage(AbstractSessionStorage):
     def load(self) -> dict:
         stream_name = f"session_{self.session_name}"
         res = self.redis.xread({stream_name: b"0-0"}, None, 1000)
-        enc_value = res[0][1][-1][1][b"cookies"]
-        return json.loads(self.decrypt(enc_value, self.secret).decode())
+        try:
+            enc_value = res[0][1][-1][1][b"cookies"]
+            return json.loads(self.decrypt(enc_value, self.secret).decode())
+        except (IndexError, ValueError):
+            return {}
 
     def encrypt(self, message: bytes, key: bytes) -> bytes:
         assert key, "No secret key provided"
