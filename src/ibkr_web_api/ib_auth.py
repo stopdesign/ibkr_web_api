@@ -76,6 +76,12 @@ class IbApi:
 
         self.base_url = 'https://%s' % self.base_hostname
 
+    def get_portal_url(self):
+        "https://%s/portal.proxy/v1/portal" % self.base_hostname
+
+    def get_websocket_url(self):
+        return "wss://%s/portal.proxy/v1/portal/ws" % self.base_hostname
+
     @property
     def xxx_password(self):
         return "x" * len(self.password)
