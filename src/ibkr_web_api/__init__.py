@@ -1,4 +1,5 @@
-from .ib_xyz import IbXyz
-from .ib_auth import IbApi
+from .auth import IBAuth
+from .client import IBClient, IBThinClient
+from .session import IBSession
 
-__all__ = ["IbXyz", "IbApi"]
+__all__ = ["IBAuth", "IBClient", "IBThinClient", "IBSession"]
