@@ -6,7 +6,7 @@ from .auth import IBAuth
 from .errors import IserverError, SSOError
 from .rest import Accounts, Iserver, MarketData
 from .session import IBSession
-from .storage import AbstractSessionStorage, FileStorage, RedisStorage
+from .storage import AbstractSessionStorage, FileStorage
 
 log = logging.getLogger("ib_client")
 
@@ -19,14 +19,15 @@ class IBThinClient:
     _auth: IBAuth
     _session: IBSession
     _storage: AbstractSessionStorage
+    _base_url = "https://cdcdyn.interactivebrokers.com"
 
-    def __init__(self, session_id) -> None:
+    def __init__(self, session_id, storage=None) -> None:
 
         # Перманентное хранилище сессии
-        self._storage = FileStorage(session_id)
+        self._storage = storage if storage else FileStorage(session_id)
 
         # Делает запросы и хранит состояние сессии
-        self._session = IBSession(self._storage)
+        self._session = IBSession(self._storage, self._base_url)
 
         # Расписание уборщицы IBKR
         # self._calendar = IBCalendar()
@@ -72,7 +73,7 @@ class IBThinClient:
             log.error("Can't get iserver session status")
         return sso, a, c
 
-    def keep_connected(self):
+    def keep_connected(self) -> None:
         raise NotImplementedError("IBThinClient can't maintain authentication")
 
 
@@ -81,12 +82,12 @@ class IBClient(IBThinClient):
     Может получать и обновлять сессию.
     """
 
-    def __init__(self, username, password, paper, reauth=False) -> None:
-        super().__init__(session_id=username)
+    def __init__(self, username, password, paper, reauth=False, storage=None) -> None:
+        super().__init__(session_id=username, storage=storage)
         self._auth = IBAuth(self._session, username, password, paper)
         self._reauth = reauth
 
-    def start_session(self):
+    def start_session(self) -> None:
         log.info("Start a new session")
 
         self._auth.start_sso_session()
@@ -96,7 +97,7 @@ class IBClient(IBThinClient):
         self.iserver.reinit_session()
         sleep(2)
 
-    def kick_session(self):
+    def kick_session(self) -> None:
         try:
             # Пнуть сервер
             self.iserver.kick()
@@ -119,7 +120,7 @@ class IBClient(IBThinClient):
             sso, authenticated, competing = super().check_session()
         return sso, authenticated, competing
 
-    def keep_connected(self):
+    def keep_connected(self) -> None:
         """
         Поддерживает и восстанавливает соединение.
         """

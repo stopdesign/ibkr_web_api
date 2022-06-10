@@ -19,14 +19,14 @@ class IBSession:
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:96.0) "
         "Gecko/20100101 Firefox/96.0"
     )
-    base_url = "https://ndcdyn.interactivebrokers.com"
 
     debug = False
 
     _session: requests.Session
 
-    def __init__(self, session_storage) -> None:
+    def __init__(self, session_storage, base_url) -> None:
         self._session_storage = session_storage
+        self.base_url = base_url
         self.reset_state()
 
     @property
