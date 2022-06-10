@@ -66,7 +66,7 @@ class Iserver:
             if c.name in ["XYZAB", "cp", "portal"] or "cp." in c.name:
                 value = str(c.value or "")[:8]
                 cookies.append(f"{c.name}: {value}")
-        log.info(f"Tickle: OK, {cookies.join(', ')}")
+        log.info(f"Tickle OK: {', '.join(sorted(cookies))}")
 
     def kick(self):
 
