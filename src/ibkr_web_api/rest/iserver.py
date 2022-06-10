@@ -59,6 +59,14 @@ class Iserver:
         else:
             log.warning("Can't init iserver session")
             raise IserverError()
+    
+    def _log_tickle_ok(self):
+        cookies = []
+        for c in self._session._session.cookies:
+            if c.name in ["XYZAB", "cp", "portal"] or "cp." in c.name:
+                value = str(c.value or "")[:8]
+                cookies.append(f"{c.name}: {value}")
+        log.info(f"Tickle: OK, {cookies.join(', ')}")
 
     def kick(self):
 
@@ -96,6 +104,4 @@ class Iserver:
             self.reinit_session()
 
         else:
-            xyz = str(self._session._session.cookies.get("XYZAB"))[:8]
-            cp = str(self._session._session.cookies.get("cp"))[:8]
-            log.info(f"Tickle: OK, token: {xyz}, cp: {cp}")
+            self._log_tickle_ok()
