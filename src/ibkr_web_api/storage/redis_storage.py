@@ -1,7 +1,6 @@
 import json
 
 from cryptography.fernet import Fernet
-from termcolor import cprint
 
 from .abc import AbstractSessionStorage
 

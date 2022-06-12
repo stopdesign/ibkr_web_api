@@ -2,6 +2,7 @@ import logging
 from datetime import datetime
 from time import sleep
 
+from .alert import BaseAlertHandler
 from .auth import IBAuth
 from .errors import IserverError, SSOError
 from .rest import Accounts, Iserver, MarketData, Portfolio
@@ -12,7 +13,6 @@ log = logging.getLogger("ib.client")
 
 
 BASE_URLS = [
-    "https://gdcdyn.interactivebrokers.com",
     "https://cdcdyn.interactivebrokers.com",
     "https://ndcdyn.interactivebrokers.com",
 ]
@@ -36,7 +36,7 @@ class IBThinClient:
         self._base_urls = BASE_URLS
 
         # Перманентное хранилище сессии
-        self._storage = storage if storage else FileStorage(username)
+        self._storage = storage or FileStorage(username)
 
         # Делает запросы и хранит состояние сессии
         self._session = IBSession(self._storage, BASE_URLS[0], username)
@@ -86,10 +86,11 @@ class IBClient(IBThinClient):
     Может получать и обновлять сессию.
     """
 
-    def __init__(self, username, password, paper, storage=None) -> None:
+    def __init__(self, username, password, paper, storage=None, alert=None) -> None:
         super().__init__(username=username, storage=storage)
         self._session.readonly = False
         self._auth = IBAuth(self._session, username, password, paper)
+        self._alert = alert or BaseAlertHandler()
 
     @property
     def _iserver(self) -> Iserver:
@@ -124,15 +125,17 @@ class IBClient(IBThinClient):
         self._base_urls = self._base_urls[1:] + self._base_urls[:1]
         self._session.base_url = self._base_urls[0]
         log.warning(f"Set base URL: {self._session.base_url}")
-    
-    def fatal_error(self, reason):
-        log.error(f"{reason} {self._fatal_cnt + 1}")
 
-        print("\nALERT - ALERT - ALERT\n")
+    def fatal_error(self, reason):
+        txt = f"{reason}, cnt: {self._fatal_cnt + 1}"
+
+        log.error(txt)
+
+        self._alert.send(f"IB alert {self._auth.username}. {txt}")
 
         if self._fatal_cnt:
             self.rotate_base_url()
-        
+
         self._fatal_cnt += 1
         self._error_cnt = 0
 
@@ -145,6 +148,11 @@ class IBClient(IBThinClient):
         """
         try:
             self._iserver.kick()
+
+            # Раньше были ошибки, но kick прошел удачно
+            if self._fatal_cnt:
+                self._alert.send(f"IB alert {self._auth.username}: OK now.")
+
             self._fatal_cnt = 0
             self._error_cnt = 0
 

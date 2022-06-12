@@ -2,7 +2,7 @@ import logging
 # from secrets import token_hex
 from time import sleep
 
-from ibkr_web_api.errors import IserverError, SomeError, SSOError
+from ..errors import IserverError, SomeError, SSOError
 
 log = logging.getLogger("ib.iserver")
 
@@ -61,6 +61,13 @@ class Iserver:
     # def portal_logout(self):
     #     return self._session.json_request("/logout", "POST")
 
+    # def _server_info(self):
+    #     # Вывести информацию про iserver, с которым работаем
+    #     server_info = auth_status.get("serverInfo", {})
+    #     name = server_info.get("serverName")
+    #     version = server_info.get("serverVersion")
+    #     log.info(f"MAC: {auth_status['MAC']}, name: {name}, version: {version}")
+
     def reinit_session(self, num=5, pause=5):
         """
         Захватить iserver-сессию.
@@ -104,12 +111,6 @@ class Iserver:
 
         # Проверить статус iserver
         auth_status = res.json.get("iserver", {}).get("authStatus", {})
-
-        # Вывести информацию про iserver, с которым работаем
-        server_info = auth_status.get("serverInfo", {})
-        name = server_info.get("serverName")
-        version = server_info.get("serverVersion")
-        log.info(f"MAC: {auth_status['MAC']}, name: {name}, version: {version}")
 
         if msg := str(auth_status.get("message", "")).replace("\n", " "):
             log.warning(f"Iserver message: {msg}")
