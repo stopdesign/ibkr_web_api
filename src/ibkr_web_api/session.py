@@ -7,14 +7,14 @@ from time import sleep
 import requests
 from termcolor import cprint
 
-from .utils.response import Response
+from .utils.json_request import JSONRequest
 
-log = logging.getLogger("ib_session")
+log = logging.getLogger("ib.session")
 
 
 class IBSession:
     auth_request_delay = 0.5
-    request_timeout = 10
+    request_timeout = 12  # после 10 секунд наступает 503
     user_agent = (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:96.0) "
         "Gecko/20100101 Firefox/96.0"
@@ -24,14 +24,20 @@ class IBSession:
 
     _session: requests.Session
 
-    def __init__(self, session_storage, base_url) -> None:
+    def __init__(self, session_storage, base_url, username) -> None:
         self._session_storage = session_storage
         self.base_url = base_url
+        self.username = username
+        self.readonly = True
         self.reset_state()
 
     @property
     def portal_proxy_url(self):
         return f"{self.base_url}/portal.proxy/v1/portal"
+
+    def bulletins(self):
+        url = f"{self.base_url}/portal.proxy/v1/gstat/bulletins?p=login"
+        return self.json_request(url, "GET")
 
     def reset_state(self):
         """
@@ -46,7 +52,6 @@ class IBSession:
                 "User-Agent": self.user_agent,
             }
         )
-        self.resp_two_fa = None
         self.referer = None
         self.auth_time = None
 
@@ -103,7 +108,7 @@ class IBSession:
                 self._session.cookies.set(k, v)
 
         except Exception as e:
-            log.error(f"Request error: {e}")
+            log.error(f"Auth request error: {e}")
             resp = requests.Response()
             resp.status_code = 0
 
@@ -138,7 +143,12 @@ class IBSession:
         headers = dict(self._session.headers)
 
         portal_page_url = "/portal/?loginType=2&action=ACCT_MGMT_MAIN&clt=0"
-        headers["Referer"] = self.base_url + portal_page_url
+        self.referer = self.base_url + portal_page_url
+        headers["Referer"] = self.referer
+        headers["Origin"] = self.base_url
+
+        # Не требуется, но в браузере есть.
+        headers["Content-Type"] = "application/json; charset=utf-8"
 
         if self.debug:
             cprint("REQUEST HEADERS:", "white", end=" ")
@@ -156,26 +166,42 @@ class IBSession:
             "allow_redirects": False,
         }
 
-        try:
-            response = Response.from_requests(self._session.request(**params))
-        except Exception as e:
-            response = Response.from_exception(e)
+        response = JSONRequest(self._session, **params)
 
-        if response.error:
-            log.error(f"request error: {response.error}")
-
-        if response.exception:
-            log.error(f"request exception: {response.exception}")
-
-        # Переустанавливаю cookies, чтобы удалить привязку к домену
+        # Сохранение cookies
         if response.cookies:
             for cookie in response.cookies:
                 self._session.cookies.set(cookie.name, None)
                 self._session.cookies.set(cookie.name, cookie.value)
-            log.info("New cookies detected")
-            self.save()
+
+            log.info("Session updated")
+            self.log_info()
+
+            if not self.readonly:
+                self.save()
 
         return response
+
+    def log_info(self):
+        cookies = []
+        for c in self._session.cookies:
+            if c.name in ["XYZAB", "cp", "portal", "REGION"] or "cp." in c.name:
+                value = str(c.value or "")[:6]
+                cookies.append(f"{c.name.lower()}: {value}")
+        username = self.username
+        log.info(f"User: {username}, {', '.join(sorted(cookies))}")
+
+    def dump(self) -> dict:
+        cookies = self._session.cookies.get_dict()
+        cookies = {k: v for k, v in cookies.items() if v != '""'}
+        cookies = {k: v for k, v in cookies.items() if "AWSALBAPP" not in k}
+        data = {
+            "auth_time": self.auth_time,
+            "base_url": self.base_url,
+            "referer": self.referer,
+            "cookies": cookies,
+        }
+        return data
 
     def load(self):
         data = self._session_storage.load()
@@ -196,19 +222,16 @@ class IBSession:
 
         if bool(data):
             log.info("Session loaded")
+            self.log_info()
 
         return bool(data)
-
+    
     def save(self):
-        cookies = self._session.cookies.get_dict()
-        cookies = {k: v for k, v in cookies.items() if v != '""'}
-        cookies = {k: v for k, v in cookies.items() if "AWSALBAPP" not in k}
-        data = {
-            "auth_time": self.auth_time,
-            "base_url": self.base_url,
-            "cookies": cookies,
-            # TODO: сохранить referer
-        }
+        if self.readonly:
+            log.error("Can't save readonly session")
+            return
+
+        data = self.dump()
         try:
             self._session_storage.save(data)
             log.info("Session saved")

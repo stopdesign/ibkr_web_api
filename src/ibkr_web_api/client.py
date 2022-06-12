@@ -4,30 +4,42 @@ from time import sleep
 
 from .auth import IBAuth
 from .errors import IserverError, SSOError
-from .rest import Accounts, Iserver, MarketData
+from .rest import Accounts, Iserver, MarketData, Portfolio
 from .session import IBSession
 from .storage import AbstractSessionStorage, FileStorage
 
-log = logging.getLogger("ib_client")
+log = logging.getLogger("ib.client")
+
+
+BASE_URLS = [
+    "https://gdcdyn.interactivebrokers.com",
+    "https://cdcdyn.interactivebrokers.com",
+    "https://ndcdyn.interactivebrokers.com",
+]
 
 
 class IBThinClient:
     """
-    Базовый клиент. Использует готовую сессию из session_storage.
+    Базовый клиент. Может только читать сессию.
     """
 
     _auth: IBAuth
     _session: IBSession
     _storage: AbstractSessionStorage
-    _base_url = "https://cdcdyn.interactivebrokers.com"
 
-    def __init__(self, session_id, storage=None) -> None:
+    def __init__(self, username, storage=None) -> None:
+
+        self._ts = 0
+        self._error_cnt = 0
+        self._fatal_cnt = 0
+
+        self._base_urls = BASE_URLS
 
         # Перманентное хранилище сессии
-        self._storage = storage if storage else FileStorage(session_id)
+        self._storage = storage if storage else FileStorage(username)
 
         # Делает запросы и хранит состояние сессии
-        self._session = IBSession(self._storage, self._base_url)
+        self._session = IBSession(self._storage, BASE_URLS[0], username)
 
         # Расписание уборщицы IBKR
         # self._calendar = IBCalendar()
@@ -49,32 +61,24 @@ class IBThinClient:
         return MarketData(session=self._session)
 
     @property
-    def iserver(self) -> Iserver:
+    def portfolio(self) -> Portfolio:
         """
-        Initializes the `Iserver` object.
+        Initializes the `Portfolio` object.
         """
 
-        return Iserver(session=self._session)
+        return Portfolio(session=self._session)
 
     def load_session(self):
         self._session.load()
 
-    def check_session(self):
-        res = self.iserver.auth_status()
-        if res.json:
-            a = res.json.get("authenticated")
-            c = res.json.get("competing")
-            sso = True
-            log.info(f"Authenticated: {a}, Competing: {c}")
-        else:
-            sso = False
-            a = False
-            c = None
-            log.error("Can't get iserver session status")
-        return sso, a, c
+    def start_session(self) -> None:
+        raise NotImplementedError("Use IBClient for authentication")
+
+    def kick_session(self) -> None:
+        raise NotImplementedError("Use IBClient for authentication")
 
     def keep_connected(self) -> None:
-        raise NotImplementedError("IBThinClient can't maintain authentication")
+        raise NotImplementedError("Use IBClient for authentication")
 
 
 class IBClient(IBThinClient):
@@ -82,56 +86,97 @@ class IBClient(IBThinClient):
     Может получать и обновлять сессию.
     """
 
-    def __init__(self, username, password, paper, reauth=False, storage=None) -> None:
-        super().__init__(session_id=username, storage=storage)
+    def __init__(self, username, password, paper, storage=None) -> None:
+        super().__init__(username=username, storage=storage)
+        self._session.readonly = False
         self._auth = IBAuth(self._session, username, password, paper)
-        self._reauth = reauth
+
+    @property
+    def _iserver(self) -> Iserver:
+        """
+        Initializes the `Iserver` object.
+        Требуется клиент с правами на аутентификацию.
+        """
+
+        return Iserver(session=self._session)
 
     def start_session(self) -> None:
-        log.info("Start a new session")
+        log.info("Starting a new session")
 
         self._auth.start_sso_session()
         sleep(2)
+
         self._auth.sso_validate()
         sleep(2)
-        self.iserver.reinit_session()
+
+        self._iserver.reinit_session()
         sleep(2)
 
+    def check_bulletins(self):
+        res = self._session.bulletins()
+        if res.json:
+            for message in res.json:
+                log.warning(message)
+        else:
+            log.info("No bulletins")
+
+    def rotate_base_url(self) -> None:
+        self._base_urls = self._base_urls[1:] + self._base_urls[:1]
+        self._session.base_url = self._base_urls[0]
+        log.warning(f"Set base URL: {self._session.base_url}")
+    
+    def fatal_error(self, reason):
+        log.error(f"{reason} {self._fatal_cnt + 1}")
+
+        print("\nALERT - ALERT - ALERT\n")
+
+        if self._fatal_cnt:
+            self.rotate_base_url()
+        
+        self._fatal_cnt += 1
+        self._error_cnt = 0
+
+        self.start_session()
+        self._ts = 0
+
     def kick_session(self) -> None:
+        """
+        Дернуть соединение один раз.
+        """
         try:
-            # Пнуть сервер
-            self.iserver.kick()
+            self._iserver.kick()
+            self._fatal_cnt = 0
+            self._error_cnt = 0
+
         except SSOError:
             # Принять решение о запуске новой SSO сессии.
-            # Следить за количеством неудачных попыток.
-            if self._reauth:
-                self.start_session()
-        except IserverError:
-            # Неустранимая ошибка iserver — подождать
-            pass
-        except Exception:
-            # Какая-то еще ошибка
-            pass
+            self.fatal_error("SSO error")
 
-    def check_session(self, kick=True):
-        sso, authenticated, competing = super().check_session()
-        if kick and not (sso and authenticated and not competing):
-            self.kick_session()
-            sso, authenticated, competing = super().check_session()
-        return sso, authenticated, competing
+        except IserverError:
+            # Iserver никак не может соединиться.
+            self.fatal_error("Fatal Iserver Error")
+
+        except Exception as e:
+            self._error_cnt += 1
+            log.error(f"Iserver kick exception: {e}")
+
+            if self._error_cnt > 10:
+                self.fatal_error("Too Many Errors")
 
     def keep_connected(self) -> None:
         """
         Поддерживает и восстанавливает соединение.
+        Запускает kick_session по определенным секундам
+        каждой минуты и сразу после запуска.
         """
 
-        while dt := datetime.utcnow():
+        while ts := datetime.now().timestamp():
 
-            if dt.minute == getattr(self, "_minute", -1):
+            if (self._ts and int(ts % 30)) or (ts - self._ts < 10):
                 sleep(0.5)
                 continue
 
-            self._minute = dt.minute
+            self._ts = ts
 
             # if not self. _calendar.working:
             # continue

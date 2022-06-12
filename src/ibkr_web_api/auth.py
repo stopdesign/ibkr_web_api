@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 from .session import IBSession
 from .utils.ib_xyz import IBXyz
 
-log = logging.getLogger("ib_auth")
+log = logging.getLogger("ib.auth")
 
 
 def parse_xml_response(xml_string):
@@ -33,6 +33,7 @@ class IBAuth:
 
     def __init__(self, session, username, password, paper=False):
         self._session = session
+
         self.username = username
         self.password = password
         self.login_type = 2 if paper else 1
@@ -40,6 +41,9 @@ class IBAuth:
 
         self.ibkey_handler = default_2fa_handler
         self.sms_handler = default_2fa_handler
+
+        if self._session.readonly:
+            raise ValueError("IBAuth can't use readonly session")
 
     @property
     def xxx_password(self):

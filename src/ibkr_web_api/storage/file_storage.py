@@ -8,11 +8,11 @@ log = logging.getLogger("session_file_storage")
 
 
 class FileStorage(AbstractSessionStorage):
-    def __init__(self, session_id, path=""):
+    def __init__(self, username, path=""):
         """
         session_name - имя пользователя или другой идентификатор сессии.
         """
-        self.data_file_path = f"session_{session_id}.json"
+        self.data_file_path = f"session_{username}.json"
 
     def save(self, data):
         with open(self.data_file_path, "w") as f:

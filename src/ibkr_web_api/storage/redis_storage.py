@@ -17,41 +17,21 @@ class RedisStorage(AbstractSessionStorage):
         self.redis = redis_client
         self.secret = secret
 
-    def save(self, data: dict):
+    def save(self, session: dict):
         # Сдампить cookies в строку и зашифровать
-        cookies = data["cookies"]
-        cookies_str = json.dumps(cookies, default=str).encode()
-        data = {"cookies": self.encrypt(cookies_str, self.secret)}
+        cookies_str = json.dumps(session, default=str).encode()
+        data = {"session": self.encrypt(cookies_str, self.secret)}
         stream_name = f"session_{self.session_name}"
         self.redis.xadd(stream_name, data, maxlen=5, approximate=False)
-
-        cprint(
-            "SAVE SESSION: "
-            f"uid={cookies.get('USERID')}, "
-            f"cp={cookies.get('cp')}, "
-            f"token={cookies.get('XYZAB')}",
-            "green",
-        )
 
     def load(self) -> dict:
         stream_name = f"session_{self.session_name}"
         res = self.redis.xread({stream_name: b"0-0"}, None, 1000)
         try:
-            enc_value = res[0][1][-1][1][b"cookies"]
-            cookies = json.loads(self.decrypt(enc_value, self.secret).decode())
-            data = {
-                "cookies": cookies,
-            }
-            # print(json.dumps(cookies, indent=2))
-            cprint(
-                "LOAD SESSION: "
-                f"uid={cookies.get('USERID')}, "
-                f"cp={cookies.get('cp')}, "
-                f"token={cookies.get('XYZAB')}",
-                "blue",
-            )
-            return data
-        except (IndexError, ValueError):
+            enc_value = res[0][1][-1][1][b"session"]
+            session = json.loads(self.decrypt(enc_value, self.secret).decode())
+            return session
+        except (IndexError, ValueError, KeyError):
             return {}
 
     def encrypt(self, message: bytes, key: bytes) -> bytes:
