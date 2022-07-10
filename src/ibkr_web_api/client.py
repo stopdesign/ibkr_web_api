@@ -5,7 +5,7 @@ from time import sleep
 from .alert import BaseAlertHandler
 from .auth import IBAuth
 from .errors import IserverError, SSOError
-from .rest import Accounts, Iserver, MarketData, Portfolio
+from .rest import Accounts, Iserver, MarketData, Portfolio, Trsrv
 from .session import IBSession
 from .storage import AbstractSessionStorage, FileStorage
 
@@ -13,8 +13,8 @@ log = logging.getLogger("ib.client")
 
 
 BASE_URLS = [
-    "https://cdcdyn.interactivebrokers.com",
     "https://ndcdyn.interactivebrokers.com",
+    "https://cdcdyn.interactivebrokers.com",
 ]
 
 
@@ -61,6 +61,14 @@ class IBThinClient:
         return MarketData(session=self._session)
 
     @property
+    def trsrv(self) -> Trsrv:
+        """
+        Initializes the `Trsrv` object.
+        """
+
+        return Trsrv(session=self._session)
+
+    @property
     def portfolio(self) -> Portfolio:
         """
         Initializes the `Portfolio` object.
@@ -101,18 +109,6 @@ class IBClient(IBThinClient):
 
         return Iserver(session=self._session)
 
-    def start_session(self) -> None:
-        log.info("Starting a new session")
-
-        self._auth.start_sso_session()
-        sleep(2)
-
-        self._auth.sso_validate()
-        sleep(2)
-
-        self._iserver.reinit_session()
-        sleep(2)
-
     def check_bulletins(self):
         res = self._session.bulletins()
         if res.json:
@@ -139,9 +135,6 @@ class IBClient(IBThinClient):
         self._fatal_cnt += 1
         self._error_cnt = 0
 
-        self.start_session()
-        self._ts = 0
-
     def kick_session(self) -> None:
         """
         Дернуть соединение один раз.
@@ -151,18 +144,22 @@ class IBClient(IBThinClient):
 
             # Раньше были ошибки, но kick прошел удачно
             if self._fatal_cnt:
-                self._alert.send(f"IB alert {self._auth.username}: OK now.")
+                self._alert.send(f"IB alert {self._auth.username}. OK now.")
 
             self._fatal_cnt = 0
             self._error_cnt = 0
 
+            return True
+
         except SSOError:
             # Принять решение о запуске новой SSO сессии.
             self.fatal_error("SSO error")
+            return False
 
         except IserverError:
             # Iserver никак не может соединиться.
             self.fatal_error("Fatal Iserver Error")
+            return False
 
         except Exception as e:
             self._error_cnt += 1
@@ -170,6 +167,45 @@ class IBClient(IBThinClient):
 
             if self._error_cnt > 10:
                 self.fatal_error("Too Many Errors")
+                return False
+
+            return True
+
+    def start_session(self) -> None:
+        log.info("Starting a new session")
+
+        try:
+            self._auth.start_sso_session()
+        except Exception as e:
+            log.error(f"auth.start_sso_session exception: {e}")
+            return
+            
+        sleep(2)
+
+        try:
+            self._auth.sso_validate()
+        except Exception as e:
+            log.error(f"auth.sso_validate exception: {e}")
+            return
+
+        sleep(2)
+
+        try:
+            self._iserver.reinit_session()
+        except Exception as e:
+            log.error(f"iserver.reinit_session exception: {e}")
+            return
+
+    def ibkr_server_up(self):
+        """
+        Плановые перерывы в работе IBKR.
+        """
+        dt = datetime.utcnow()
+        
+        if dt.isoweekday() == 6 and dt.hour in [3, 4, 5, 6]:
+            return False
+        else:
+            return True
 
     def keep_connected(self) -> None:
         """
@@ -186,7 +222,16 @@ class IBClient(IBThinClient):
 
             self._ts = ts
 
-            # if not self. _calendar.working:
-            # continue
+            if not self.ibkr_server_up():
+                log.info("Not working")
+                continue
 
-            self.kick_session()
+            # Пнуть iserver
+            sso_ok = self.kick_session()
+
+            # Если 
+            if not sso_ok:
+                sleep(5)
+                self.start_session()
+                sleep(2)
+                self._ts = 0
