@@ -3,6 +3,9 @@ import logging
 log = logging.getLogger("ib.accounts")
 
 
+MAX_CONF = 5
+
+
 class Accounts:
     def __init__(self, session) -> None:
         self._session = session
@@ -33,7 +36,9 @@ class Accounts:
             return res
 
         # Просят что-то подтвердить
-        if type(res.json) is list and "id" in res.json[0]:
+        cnt = 0
+        while type(res.json) is list and "id" in res.json[0] and cnt < MAX_CONF:
+            cnt += 1
             if messages := res.json[0].get("message"):
                 if type(messages) is list:
                     for message in messages:
@@ -43,7 +48,9 @@ class Accounts:
                     messages = messages.replace("\n", " ")
                     log.warning(f"Order confirmation: {messages}")
             if reply_id := res.json[0].get("id"):
-                return self.place_order_reply(reply_id)
+                res = self.place_order_reply(reply_id)
+            else:
+                log.error("No reply id in confirmation request")
 
         return res
 
