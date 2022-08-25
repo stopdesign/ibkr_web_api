@@ -89,6 +89,28 @@ class IBThinClient:
     def keep_connected(self) -> None:
         raise NotImplementedError("Use IBClient for authentication")
 
+    def ibkr_long_break(self, dt=None):
+        """
+        Долгий перерыв с полной перезагрузкой.
+
+        Friday, 20:00 - 23:59 US/Pacific
+        """
+        dt = dt or datetime.utcnow().replace(tzinfo=pytz.utc)
+        dt = dt.astimezone(tz=pytz.timezone("US/Pacific"))
+
+        return dt.isoweekday() == 5 and dt.time >= time(20, 00)
+
+    def ibkr_short_break(self, dt=None):
+        """
+        Короткий перерыв с легкой перезагрузкой.
+        Сессия не сбрасывается.
+
+        Saturday - Thursday, 20:45 - 21:45 US/Pacific
+        """
+        dt = dt or datetime.utcnow().replace(tzinfo=pytz.utc)
+        dt = dt.astimezone(tz=pytz.timezone("US/Pacific"))
+
+        return dt.isoweekday() != 5 and (time(20, 45) <= dt.time() <= time(21, 45))
 
 class IBClient(IBThinClient):
     """
@@ -196,29 +218,6 @@ class IBClient(IBThinClient):
         except Exception as e:
             log.error(f"iserver.reinit_session exception: {e}")
             return
-
-    def ibkr_long_break(self, dt=None):
-        """
-        Долгий перерыв с полной перезагрузкой.
-
-        Friday, 20:00 - 23:59 US/Pacific
-        """
-        dt = dt or datetime.utcnow().replace(tzinfo=pytz.utc)
-        dt = dt.astimezone(tz=pytz.timezone("US/Pacific"))
-        
-        return dt.isoweekday() == 5 and dt.time >= time(20, 00)
-
-    def ibkr_short_break(self, dt=None):
-        """
-        Короткий перерыв с легкой перезагрузкой.
-        Сессия не сбрасывается.
-
-        Saturday - Thursday, 20:45 - 21:45 US/Pacific
-        """
-        dt = dt or datetime.utcnow().replace(tzinfo=pytz.utc)
-        dt = dt.astimezone(tz=pytz.timezone("US/Pacific"))
-
-        return dt.isoweekday() != 5 and (time(20, 45) <= dt.time() <= time(21, 45))
 
     def keep_connected(self) -> None:
         """
