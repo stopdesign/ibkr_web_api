@@ -17,6 +17,10 @@ class MarketData:
         url = f"/iserver/contract/{conid}/info"
         return self._session.json_request(url, "GET")
 
+    def contract_algos(self, conid):
+        url = f"/iserver/contract/{conid}/algos?addDescription=1&addParams=1"
+        return self._session.json_request(url, "GET")
+
     def snapshot(self, conids, since):
         url = "/iserver/marketdata/snapshot"
         # &fields=31&fields=84&fields=85&fields=86&fields=88

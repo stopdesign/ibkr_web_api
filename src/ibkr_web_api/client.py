@@ -1,6 +1,7 @@
 import logging
-from datetime import datetime
+from datetime import datetime, time
 from time import sleep
+import pytz
 
 from .alert import BaseAlertHandler
 from .auth import IBAuth
@@ -196,16 +197,28 @@ class IBClient(IBThinClient):
             log.error(f"iserver.reinit_session exception: {e}")
             return
 
-    def ibkr_server_up(self):
+    def ibkr_long_break(self, dt=None):
         """
-        Плановые перерывы в работе IBKR.
+        Долгий перерыв с полной перезагрузкой.
+
+        Friday, 20:00 - 23:59 US/Pacific
         """
-        dt = datetime.utcnow()
+        dt = dt or datetime.utcnow().replace(tzinfo=pytz.utc)
+        dt = dt.astimezone(tz=pytz.timezone("US/Pacific"))
         
-        if dt.isoweekday() == 6 and dt.hour in [3, 4, 5, 6]:
-            return False
-        else:
-            return True
+        return dt.isoweekday() == 5 and dt.time >= time(20, 00)
+
+    def ibkr_short_break(self, dt=None):
+        """
+        Короткий перерыв с легкой перезагрузкой.
+        Сессия не сбрасывается.
+
+        Saturday - Thursday, 20:45 - 21:45 US/Pacific
+        """
+        dt = dt or datetime.utcnow().replace(tzinfo=pytz.utc)
+        dt = dt.astimezone(tz=pytz.timezone("US/Pacific"))
+
+        return dt.isoweekday() != 5 and (time(20, 45) <= dt.time() <= time(21, 45))
 
     def keep_connected(self) -> None:
         """
@@ -222,8 +235,8 @@ class IBClient(IBThinClient):
 
             self._ts = ts
 
-            if not self.ibkr_server_up():
-                log.info("Not working")
+            if self.ibkr_long_break():
+                log.info("IBKR Scheduled Maintenance")
                 continue
 
             # Пнуть iserver
@@ -231,6 +244,10 @@ class IBClient(IBThinClient):
 
             # Если 
             if not sso_ok:
+                if self.ibkr_short_break():
+                    log.info("IBKR Short Break")
+                    sleep(30)
+                
                 sleep(5)
                 self.start_session()
                 sleep(2)

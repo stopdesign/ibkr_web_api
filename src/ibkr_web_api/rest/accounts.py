@@ -14,8 +14,12 @@ class Accounts:
         return self._session.json_request("/iserver/accounts", "GET")
 
     def orders(self):
-        url = "/iserver/account/orders?force=false"
-        # data = {"filters": []}
+        url = f"/iserver/account/orders?force=false"
+        # url += "&filters=filled"
+        return self._session.json_request(url, "GET")
+
+    def order_status(self, order_id: int):
+        url = f"/iserver/account/order/status/{order_id}"
         return self._session.json_request(url, "GET")
 
     def place_order(self, account_id: str, order: dict, confirm=False):
