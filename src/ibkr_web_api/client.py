@@ -98,7 +98,7 @@ class IBThinClient:
         dt = dt or datetime.utcnow().replace(tzinfo=pytz.utc)
         dt = dt.astimezone(tz=pytz.timezone("US/Pacific"))
 
-        return dt.isoweekday() == 5 and dt.time >= time(20, 00)
+        return dt.isoweekday() == 5 and dt.time() >= time(20, 00)
 
     def ibkr_short_break(self, dt=None):
         """
