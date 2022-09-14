@@ -118,16 +118,19 @@ class IBThinClient:
 
         return reboot or midnight
 
+
 class IBClient(IBThinClient):
     """
     Может получать и обновлять сессию.
     """
 
-    def __init__(self, username, password, paper, storage=None, alert=None) -> None:
+    def __init__(
+        self, username, password, paper, storage=None, alert_handler=None
+    ) -> None:
         super().__init__(username=username, storage=storage)
         self._session.readonly = False
         self._auth = IBAuth(self._session, username, password, paper)
-        self._alert = alert or BaseAlertHandler()
+        self._alert_handler = alert_handler or BaseAlertHandler()
 
     @property
     def _iserver(self) -> Iserver:
@@ -156,7 +159,7 @@ class IBClient(IBThinClient):
 
         log.error(txt)
 
-        self._alert.send(f"IB alert {self._auth.username}. {txt}")
+        self._alert_handler.send(f"IB alert {self._auth.username}. {txt}")
 
         if self._fatal_cnt:
             self.rotate_base_url()
@@ -173,7 +176,8 @@ class IBClient(IBThinClient):
 
             # Раньше были ошибки, но kick прошел удачно
             if self._fatal_cnt:
-                self._alert.send(f"IB alert {self._auth.username}. OK now.")
+                msg = f"IB alert {self._auth.username}. OK now."
+                self._alert_handler.send(msg)
 
             self._fatal_cnt = 0
             self._error_cnt = 0
@@ -194,7 +198,7 @@ class IBClient(IBThinClient):
             self._error_cnt += 1
             log.error(f"Iserver kick exception: {e}")
 
-            if self._error_cnt > 10:
+            if self._error_cnt > 5:
                 self.fatal_error("Too Many Errors")
                 return False
 
@@ -208,7 +212,7 @@ class IBClient(IBThinClient):
         except Exception as e:
             log.error(f"auth.start_sso_session exception: {e}")
             return
-            
+
         sleep(2)
 
         try:
@@ -244,15 +248,24 @@ class IBClient(IBThinClient):
                 log.info("IBKR Scheduled Maintenance")
                 continue
 
+            if self._fatal_cnt >= 3:
+                msg = "Too many Fatal Errors, wait 1 hour"
+                log.error(msg)
+                self._alert_handler.send(msg)
+                sleep(3600)
+                self._fatal_cnt = 0
+                self._error_cnt = 0
+                continue
+
             # Пнуть iserver
             sso_ok = self.kick_session()
 
-            # Если 
+            # Если
             if not sso_ok:
                 if self.ibkr_short_break():
                     log.info("IBKR Short Break")
                     sleep(30)
-                
+
                 sleep(5)
                 self.start_session()
                 sleep(2)

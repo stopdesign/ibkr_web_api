@@ -153,7 +153,7 @@ class IBAuth:
         Выбрать sf_type по приоритету.
         """
         sf_types = (sf_types or "").strip().split(",")
-        for sf in ["5.2a", "4.2", "5.2i"]:
+        for sf in ["5.2a", "5.2i", "4.2"]:
             if sf in sf_types:
                 return sf
         return None

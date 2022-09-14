@@ -3,6 +3,8 @@ IBKR web API client
 
 It is a prototype client for IBKR web API.
 
+https://interactivebrokers.github.io/cpwebapi/
+
 The goal is to obtain session cookies and use it for direct requesting the web API.
 I believe this is the minimum required list of cookies:
 

@@ -30,7 +30,7 @@ class MarketData:
     def history(self, conid, period, bar="1min", rth=True):
         url = "/iserver/marketdata/history"
         outsideRth = "false" if rth else "true"
-        url += f"?conid={conid}&period={period}&bar={bar}&outsideRth={outsideRth}"
+        url += f"?conid={conid}&period={period}&bar={bar}&outsideRth={outsideRth}"   # &exchange=SMART
         return self._session.json_request(url, "GET")
 
     def history_test(self):

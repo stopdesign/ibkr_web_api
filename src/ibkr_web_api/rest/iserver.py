@@ -82,10 +82,21 @@ class Iserver:
             if i > 1:
                 log.info(f"Sleep {pause} sec...")
                 sleep(pause)
+
             log.info(f"Init iserver session: attempt {i}/{num}")
             res = self._init_session()
+
             if 200 <= res.status_code < 210:
                 log.info(f"Init iserver session: {res.json}")
+
+                if res.json.get("passed") == False:
+                    log.error("Iserver session: passed = False")
+                    raise IserverError()
+
+                if res.json.get("wait"):
+                    log.error("Iserver session: ban due to failed login limit")
+                    raise IserverError()
+
                 self._session.log_info()
                 break
             else:
