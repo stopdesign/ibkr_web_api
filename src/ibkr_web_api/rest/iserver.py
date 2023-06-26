@@ -34,8 +34,8 @@ class Iserver:
         Если "connected: true", то возвращает serverInfo.
         Если при этом "authenticated: false", то внутри serverInfo пусто.
         Если всё работает, то будет полноценный serverInfo:
-        { 
-            serverName: "JisfN5024", 
+        {
+            serverName: "JisfN5024",
             serverVersion: "Build 10.15.0m, Jun 6, 2022 2:57:10 PM"
         }
         Это же касается tickle.
@@ -58,8 +58,8 @@ class Iserver:
         """
         return self._session.json_request("/ssodh/init", "GET")
 
-    # def portal_logout(self):
-    #     return self._session.json_request("/logout", "POST")
+    def portal_logout(self):
+        return self._session.json_request("/logout", "POST")
 
     # def _server_info(self):
     #     # Вывести информацию про iserver, с которым работаем
