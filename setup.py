@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
     name="ibkr_web_api",
@@ -6,8 +6,7 @@ setup(
     url="https://github.com/stopdesign/ibkr_web_api.git",
     author="Gregory",
     description="IBKR Web API",
-    packages=["ibkr_web_api"],
-    package_dir={"": "src"},
+    packages=find_packages(where="src"),
     install_requires=[
         "redis~=4.3",
         "requests~=2.28",
