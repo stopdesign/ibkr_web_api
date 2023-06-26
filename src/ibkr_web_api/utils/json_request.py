@@ -17,13 +17,27 @@ class JSONRequest:
     error: str = None
     exception: Exception = None
     cookies = None
+    response: requests.Response | None = None
 
     debug = False
 
-    def __init__(self, session, **params):
+    def __str__(self) -> str:
+        if self.response:
+            url = self.response.request.url
+            method = self.response.request.method
+            status_code = self.response.status_code
+        else:
+            url = None
+            method = None
+            status_code = None
+        return f"JSONRequest({method}, {url}, {status_code})"
 
+    def __init__(self, session, **params):
+        self.response = None
         try:
             resp = session.request(**params)
+
+            self.response = resp
 
             self.status_code = resp.status_code or 0
             self.cookies = resp.cookies

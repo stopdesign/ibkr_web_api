@@ -16,3 +16,7 @@ class Portfolio:
     def positions_2(self, account):
         url = f"/portfolio2/{account}/positions"
         return self._session.json_request(url, "GET")
+
+    def invalidate_cache(self, account):
+        url = f"/portfolio/{account}/positions/invalidate"
+        return self._session.json_request(url, "POST")

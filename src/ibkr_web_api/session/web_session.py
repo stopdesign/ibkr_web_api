@@ -7,7 +7,7 @@ from time import sleep
 import requests
 from termcolor import cprint
 
-from .utils.json_request import JSONRequest
+from ..utils.json_request import JSONRequest
 
 log = logging.getLogger("ib.session")
 
@@ -225,7 +225,7 @@ class IBSession:
             self.log_info()
 
         return bool(data)
-    
+
     def save(self):
         if self.readonly:
             log.error("Can't save readonly session")
