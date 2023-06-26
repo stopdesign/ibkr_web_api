@@ -6,7 +6,8 @@ setup(
     url="https://github.com/stopdesign/ibkr_web_api.git",
     author="Gregory",
     description="IBKR Web API",
-    packages=find_packages(where="src/ibkr_web_api"),
+    packages=find_packages(where="src"),
+    package_dir={"": "src"},
     install_requires=[
         "redis~=4.3",
         "requests~=2.28",
