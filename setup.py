@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="ibkr_web_api",
-    version="1.1.6",
+    version="1.1.7",
     url="https://github.com/stopdesign/ibkr_web_api.git",
     author="Gregory",
     description="IBKR Web API",

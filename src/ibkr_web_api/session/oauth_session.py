@@ -86,7 +86,7 @@ class OAuthIBSession:
         self.oauth_access_token = conf["oauth_access_token"]
         self.live_session_token = conf["live_session_token"]
 
-    def json_request(self, url, method, data=None):
+    def json_request(self, url, method, data=None) -> JSONRequest:
         full_url = f"{self.base_url}{url}"
 
         if self.debug:

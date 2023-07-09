@@ -17,6 +17,7 @@ class JSONRequest:
     error: str = None
     exception: Exception = None
     cookies = None
+    request: requests.PreparedRequest | None = None
     response: requests.Response | None = None
 
     debug = False
@@ -32,11 +33,20 @@ class JSONRequest:
             status_code = None
         return f"JSONRequest({method}, {url}, {status_code})"
 
-    def __init__(self, session, **params):
+    def __init__(self, session: requests.Session, **params):
         self.response = None
         try:
-            resp = session.request(**params)
+            timeout = params.pop("timeout", None)
+            allow_redirects = params.pop("allow_redirects", True)
 
+            request = requests.Request(**params)
+            self.request = request.prepare()
+
+            resp = session.send(
+                self.request,
+                timeout=timeout,
+                allow_redirects=allow_redirects,
+            )
             self.response = resp
 
             self.status_code = resp.status_code or 0

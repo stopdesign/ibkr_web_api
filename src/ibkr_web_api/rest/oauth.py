@@ -70,7 +70,7 @@ class OAuth:
         auth_params_str = quote_plus(auth_params_str.strip("&"))
         return f"{method}&{auth_url}&{auth_params_str}"
 
-    def live_session_token(self, secret_int):
+    def live_session_token(self, secret_int) -> JSONRequest:
         """
         Запрос live_session_token.
         """
