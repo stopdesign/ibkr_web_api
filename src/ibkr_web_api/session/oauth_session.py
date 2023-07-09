@@ -1,30 +1,21 @@
+import hashlib
+import hmac
 import json
 import logging
-import random
+import urllib.parse
+from base64 import b64decode, b64encode
 from datetime import datetime
-from time import sleep
+from secrets import token_hex
 
 import requests
 from termcolor import cprint
 
 from ..utils.json_request import JSONRequest
 
-from pprint import pprint
-import requests
-import json
-from secrets import token_hex
-from base64 import b64encode, b64decode
-import urllib.parse
-import hashlib
-import hmac
-
 log = logging.getLogger("ib.session")
 
 
 timezone = "xxx (America/Los_Angeles)"
-
-BASE = "https://api.ibkr.com/v1/api"
-
 
 
 def sign_hmac(msg, key):
@@ -42,7 +33,6 @@ def combine_params(method: str, url: str, data: dict) -> str:
 
 
 def get_auth_header(method, url, consumer_key, oauth_token, token_secret):
-
     nonce = token_hex(10)
     now = datetime.now()
     ts = int(now.timestamp())
@@ -70,6 +60,10 @@ def get_auth_header(method, url, consumer_key, oauth_token, token_secret):
 
 
 class OAuthIBSession:
+    """
+    Подписывает oauth-запросы с использованием live_session_token.
+    """
+
     auth_request_delay = 0.5
     request_timeout = 12  # после 10 секунд наступает 503
     user_agent = (
@@ -86,53 +80,17 @@ class OAuthIBSession:
         self.username = ""
         self.readonly = False
 
+        self._conf = conf
+
         self.consumer_key = conf["consumer_key"]
         self.oauth_access_token = conf["oauth_access_token"]
         self.live_session_token = conf["live_session_token"]
 
-    def get_live_session_token(self):
-        """
-        loading diffie-hellman parameters from "dhparam.pem"
-        loading key from PEM file "private_encryption_key.pem"
-        loading key from PEM file "private_signature_key.pem"
-
-        POST
-        /oauth/live_session_token
-
-        "oauth_signature": ""
-        "oauth_signature_method": ""
-        "oauth_timestamp": ""
-        "oauth_token": ""
-        "oauth_nonce": ""
-        "diffie_hellman_challenge": ""
-        """
-        pass
-
-    def init_portal_session(self):
-        method = "GET"
-        url = "/ssodh/init"
-        return self.json_request(url, method)
-
-    def auth_request(self):
-        """
-        Запрос, устанавливающий соединение.
-        """
-        method = "POST"
-        url = "/iserver/auth/ssodh/init"
-        data = {
-            "compete": True,
-            "useSecurityContext": True,
-            "locale": "en_US",
-            "tz": timezone,
-        }
-        return self.json_request(url, method, data)
-
     def json_request(self, url, method, data=None):
-
-        url = f"{BASE}{url}"
+        full_url = f"{self.base_url}{url}"
 
         if self.debug:
-            cprint(f"\n{method} {url}", attrs=["bold"])
+            cprint(f"\n{method} {full_url}", attrs=["bold"])
 
         if self.debug:
             cprint("REQUEST DATA:", "green", end=" ")
@@ -140,7 +98,7 @@ class OAuthIBSession:
 
         h = get_auth_header(
             method,
-            url,
+            full_url,
             self.consumer_key,
             self.oauth_access_token,
             self.live_session_token,
@@ -159,13 +117,11 @@ class OAuthIBSession:
 
         params = {
             "method": method,
-            "url": url,
+            "url": full_url,
             "json": data,
             "timeout": self.request_timeout,
             "allow_redirects": False,
             "headers": headers,
         }
 
-        response = JSONRequest(self._session, **params)
-
-        return response
+        return JSONRequest(self._session, **params)

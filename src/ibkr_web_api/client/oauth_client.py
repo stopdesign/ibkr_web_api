@@ -1,14 +1,11 @@
 import logging
 from datetime import datetime, time
-from time import sleep
+
 import pytz
 
-from ..alert import BaseAlertHandler
-from ..auth import IBAuth
-from ..errors import IserverError, SSOError
-from ..rest import Accounts, Iserver, MarketData, Portfolio, Trsrv
+from ..rest import Accounts, Iserver, MarketData, OAuth, Portfolio, Trsrv
 from ..session import OAuthIBSession
-from ..storage import AbstractSessionStorage, FileStorage
+from ..storage import AbstractSessionStorage
 
 log = logging.getLogger("ib.oauth_client")
 
@@ -20,15 +17,23 @@ BASE_URLS = [
 
 class OAuthIBClient:
     """
-    Базовый клиент. Может только читать сессию.
+    Клиент.
     """
 
-    _auth: IBAuth
     _session: OAuthIBSession
     _storage: AbstractSessionStorage
 
-    def __init__(self, consumer_key, oauth_access_token, live_session_token) -> None:
-
+    def __init__(
+        self,
+        consumer_key,
+        oauth_access_token,
+        *,
+        live_session_token=None,
+        dh_params=None,
+        signature_key=None,
+        encryption_key=None,
+        token_secret=None,
+    ) -> None:
         self._ts = 0
         self._error_cnt = 0
         self._fatal_cnt = 0
@@ -42,6 +47,10 @@ class OAuthIBClient:
             "consumer_key": consumer_key,
             "oauth_access_token": oauth_access_token,
             "live_session_token": live_session_token,
+            "dh_params": dh_params,
+            "signature_key": signature_key,
+            "encryption_key": encryption_key,
+            "token_secret": token_secret,
         }
 
         # Делает запросы и хранит состояние сессии
@@ -49,6 +58,15 @@ class OAuthIBClient:
 
         # Расписание уборщицы IBKR
         # self._calendar = IBCalendar()
+
+    @property
+    def oauth(self) -> OAuth:
+        """
+        Initializes the `OAuth` object.
+        Требуется клиент с приватными ключами.
+        """
+
+        return OAuth(session=self._session)
 
     @property
     def iserver(self) -> Iserver:
@@ -91,17 +109,29 @@ class OAuthIBClient:
 
         return Portfolio(session=self._session)
 
-    def load_session(self):
-        raise NotImplementedError()
-
     def start_session(self) -> None:
-        raise NotImplementedError()
+        """
+        Получение и проверка live session token
+        """
+        log.info("Starting a new oauth live session")
 
-    def kick_session(self) -> None:
-        raise NotImplementedError()
+        oauth = self.oauth
 
-    def keep_connected(self) -> None:
-        raise NotImplementedError()
+        secret_int = oauth.generate_secret_int()
+        resp = oauth.live_session_token(secret_int)
+
+        try:
+            token, token_exp, signature = oauth.decrypt_lst(resp.json, secret_int)
+        except:
+            raise ValueError
+
+        log.info(f"Token: {token}, exp: {token_exp}")
+
+        if not oauth.validate_token(token, signature):
+            raise ValueError("Token is invalid")
+
+        # Полученный токен передается в сессию
+        self._session.live_session_token = token
 
     def ibkr_long_break(self, dt=None):
         """
